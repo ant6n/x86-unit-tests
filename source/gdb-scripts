@@ -1,0 +1,44 @@
+# gdb helper scripts to run and 
+
+define runtest
+   run
+   echo = state ========================\n
+   # cpu
+   printf "{\n"
+   
+   # executable info
+#   printf "  \"exe\": {\n"
+#   printf "    \"symbols\": {\n"
+#   printf "      \"_start\":        \"0x%08x\",\n", &(_start)
+#   printf "      \"_memory_start\": \"0x%08x\",\n", &(_memory_start)
+#   printf "      \"_memory_end\":   \"0x%08x\",\n", &(_memory_end)
+#   printf "      \"_heap\":         \"0x%08x\",\n", &(_heap)
+#   printf "      \"_stack\":        \"0x%08x\" \n", &(_stack)
+#   printf "    }\n"
+#   printf "  },\n"
+   
+   # cpu state
+   printf "  \"result_registers\": {\n"
+   printf "    \"eip\": \"0x%08x\",\n", $eip
+   printf "    \"eax\": \"0x%08x\",\n", $eax
+   printf "    \"ebx\": \"0x%08x\",\n", $ebx
+   printf "    \"ecx\": \"0x%08x\",\n", $ecx
+   printf "    \"edx\": \"0x%08x\",\n", $edx
+   printf "    \"esi\": \"0x%08x\",\n", $esi
+   printf "    \"edi\": \"0x%08x\",\n", $edi
+   printf "    \"ebp\": \"0x%08x\",\n", $ebp
+   printf "    \"esp\": \"0x%08x\",\n", $esp
+   printf "    \"eflags\": \"0x%08x\"\n", $eflags 
+   printf "  },\n"
+   
+   # memory
+   printf "  \"result_memory\": {\n"
+   printf "    \"start\": \"0x%08x\",\n", &(_memory_start)
+   printf "    \"end\":   \"0x%08x\"\n", &(_memory_end)
+   # memory is dumped as binary
+   printf "  }\n"
+   printf "}\n"
+
+   dump binary memory temp/memory.bin &(_memory_start) &(_memory_end)
+end
+
