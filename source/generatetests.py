@@ -10,11 +10,14 @@ import re
 import itertools
 import math
 from collections import OrderedDict
+from os import path
+import pathlib
 
 DEFAULT_HEAP_SIZE = 0x0
 CURRENT_OUT_FILE_INDEX = 0
 TEMP_DIR = 'temp'
-NUM_WRITTEN_FILES = 0
+TEST_WRITER_COUNTER = 0
+OUT_DIR = 'x86-tests'
 
 BSS_ADDRESS  = 0x7ff00000
 DATA_ADDRESS = 0x70000000
@@ -44,8 +47,9 @@ EREGS = ['eax', 'ecx', 'edx', 'ebx', 'esp', 'ebp', 'esi', 'edi']
         
 
 def generate_tests():
-    global NUM_WRITTEN_FILES; NUM_WRITTEN_FILES = 0
+    global TEST_WRITER_COUNTER; TEST_WRITER_COUNTER = 0
     gen_base()
+    #gen_test('0o0[1239]0 /mr'
     #gen_opcode()
     #gen_mod_rm()
     #gen_c_jmp8()
@@ -84,7 +88,7 @@ def gen_base():
     w.add_instructions('pushfd\npopfd')
     
     # push imm/pop->flags
-    for status in all_status_flags():
+    for status in all_status_and_direction_flags():
         w.add_instructions(f'push strict dword 0x{status:08X}\npopfd', f'push_imm32_{hex(status)}-popfd')
     
     # move imm32
@@ -97,7 +101,7 @@ def gen_base():
     for v in mov_values:
         for offset in memory_offsets:
             w.add_instructions(f'mov eax, strict dword 0x{v:08X}\nmov [0x{offset + HEAP_ADDRESS:08X}], eax',
-                               f'mov-0x{v:08X}->[0x{offset+HEAP_ADDRESS:08X}])',
+                               f'mov-0x{v:08X}->[0x{offset+HEAP_ADDRESS:08X}]',
                                heapsize=offset)
         
     w.close()
@@ -186,6 +190,11 @@ def all_status_flags():
         for flag in flag_set:
             status |= STATUS_FLAGS[flag]
         yield status
+
+def all_status_and_direction_flags():
+    for status in all_status_flags():
+        yield status
+        yield status | CONTROL_FLAGS['DF']
         
 
 FLAG_MASK = 0x202 # always set
@@ -403,8 +412,10 @@ def get_addressing_modes():
 #### writing out tests #############################################################################
 class TestWriter:
     def __init__(self, name):
-        self.name = name
+        global TEST_WRITER_COUNTER
+        self.name = filename = '%04d-%s' % (TEST_WRITER_COUNTER, name)
         self.results = []
+        TEST_WRITER_COUNTER += 1
 
     def add_opcodes(self, bytestring, testname=None, heapsize=DEFAULT_HEAP_SIZE,
                     initialize_stack=True, append_int3=True):
@@ -436,16 +447,15 @@ class TestWriter:
     
     
     def close(self):
-        global NUM_WRITTEN_FILES
+        pathlib.Path(OUT_DIR).mkdir(exist_ok=True) # ensure outdir exists
         result = collections.OrderedDict()
         result['name'] = self.name
         result['tests'] = self.results
-        filename = '%04d-%s.json' % (NUM_WRITTEN_FILES, self.name)
+        filename = path.join(OUT_DIR, self.name + '.json')
         with open(filename, 'w') as f:
             json.dump(result, f, indent=2)
         num_tests = len(result['tests'])
         print(f'wrote out {num_tests} tests in file {filename}')
-        NUM_WRITTEN_FILES += 1
 
 
 #### assemble/run/record ###########################################################################
@@ -454,7 +464,7 @@ def run_code(code, test_name = "n/a", test_code=None, verbose=True):
     result = OrderedDict()
     result['test_name'] = test_name
     result['test_code'] = ''
-    result['elf_gzip_base85'] = ''
+    result['elf_gzip_base64'] = ''
 
     if verbose: print("test:", test_name)
     
@@ -495,7 +505,7 @@ def run_code(code, test_name = "n/a", test_code=None, verbose=True):
     with open(f'{TEMP_DIR}/test', 'rb') as f:
         exe = f.read()
     compressed_exe = gzip.compress(exe)
-    result['elf_gzip_base85'] = base64.b85encode(compressed_exe).decode('utf-8')
+    result['elf_gzip_base64'] = base64.b64encode(compressed_exe).decode('utf-8')
 
     # read the memory
     with open(f'{TEMP_DIR}/memory.bin', 'rb') as f:
@@ -532,6 +542,9 @@ def get_hex_dump(bytestring, offset=0):
     return result
 
 
+##### MAIN #########################################################################################
+if __name__ == "__main__":
+    generate_tests()
 
 
 
