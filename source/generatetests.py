@@ -79,7 +79,7 @@ def gen_base():
     
     # push imm32
     for v in mov_values:
-        w.add_instructions(f'push strict dword 0x{v:08X}', f'push_imm32_{hex(v)}')
+        w.add_instructions(f'push strict dword 0x{v:08X}', f'push_imm32(0x{hex(v)}:X)')
     
     # flag push
     w.add_instructions('pushfd')
@@ -89,21 +89,55 @@ def gen_base():
     
     # push imm/pop->flags
     for status in all_status_and_direction_flags():
-        w.add_instructions(f'push strict dword 0x{status:08X}\npopfd', f'push_imm32_{hex(status)}-popfd')
+        w.add_instructions(f'push strict dword 0x{status:08X}\npopfd', f'push_imm32(0x{status:X})-popfd')
     
     # move imm32
     for reg in EREGS:
         for v in mov_values:
-            w.add_instructions(f'mov {reg}, strict dword 0x{v:08X}', f'mov_imm32_{reg}_'+hex(v))
+            w.add_instructions(f'mov {reg}, strict dword 0x{v:08X}\npush {reg}',
+                               f'mov_imm32(0x{v:08X})->{reg}->push')
     
+    # push reg
+    for reg in EREGS:
+        for v in mov_values:
+            w.add_instructions(f'mov {reg}, strict dword 0x{v:08X}\npush {reg}',
+                               f'push_reg:mov_imm32(0x{v:08X})->{reg}-push_{reg}')
+
+    # push reg
+    for reg in EREGS:
+        for v in mov_values:
+            w.add_instructions(f'push strict dword 0x{v:08X}\npop {reg}',
+                               f'pop_reg:push_imm32(0x{v:08X})-pop_{reg}')
+
     # move eax->[imm32] (A3)
-    # mov [0x4030201], eax
     for v in mov_values:
         for offset in memory_offsets:
             w.add_instructions(f'mov eax, strict dword 0x{v:08X}\nmov [0x{offset + HEAP_ADDRESS:08X}], eax',
-                               f'mov-0x{v:08X}->[0x{offset+HEAP_ADDRESS:08X}]',
+                               f'mov-0x{v:08X}->eax->[0x{offset+HEAP_ADDRESS:08X}]',
                                heapsize=offset)
-        
+
+    # move [imm32]->eax (A1)
+    # - eax<-imm, [mem]<-eax, eax<-0, eax<-[mem]
+    for v in mov_values:
+        for offset in memory_offsets:
+            w.add_instructions(f'mov eax, strict dword 0x{v:08X}\n'
+                               f'mov [0x{offset + HEAP_ADDRESS:08X}], eax\n'
+                               f'mov eax, strict dword 0x0\n',
+                               f'mov eax, [0x{offset + HEAP_ADDRESS:08X}]\n'
+                               f'mov-0x{v:08X}->eax->[0x{offset+HEAP_ADDRESS:08X}]->eax',
+                               heapsize=offset)
+    
+    # do the same but offset the memory locations
+    for v in mov_values:
+        for offset in memory_offsets:
+            for d in [-1, +1]:
+                w.add_instructions(f'mov eax, strict dword 0x{v:08X}\n'
+                                   f'mov [0x{offset + HEAP_ADDRESS:08X}], eax\n'
+                                   f'mov eax, strict dword 0x0\n'
+                                   f'mov eax, [0x{offset + HEAP_ADDRESS + d:08X}]\n',
+                                   f'mov-0x{v:08X}->[0x{offset+HEAP_ADDRESS:08X}][{d:+}]->eax',
+                                   heapsize=offset)
+    
     w.close()
 
 
@@ -465,7 +499,7 @@ def run_code(code, test_name = "n/a", test_code=None, verbose=True):
     result['test_name'] = test_name
     result['test_code'] = ''
     result['elf_gzip_base64'] = ''
-
+    
     if verbose: print("test:", test_name)
     
     # ensure temp directory exists
@@ -492,7 +526,11 @@ def run_code(code, test_name = "n/a", test_code=None, verbose=True):
     #print(run(f'objdump -D {TEMP_DIR}/test').stdout.decode('utf-8'))
     # execute with gdb, collect data
     gdb_result = run(f'source/gdb-generate-test-output.sh {TEMP_DIR}/test').stdout.decode('utf-8')
-    result.update(json.loads(gdb_result, object_pairs_hook=OrderedDict))    
+    try:
+        result.update(json.loads(gdb_result, object_pairs_hook=OrderedDict))
+    except json.decoder.JSONDecodeError as e:
+        print("failed to parse JSON:\n", gdb_result)
+        raise e
     
     # remove empty registers
     registers = result['result_registers']
