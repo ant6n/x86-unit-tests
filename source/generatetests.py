@@ -44,7 +44,6 @@ EREGS = ['eax', 'ecx', 'edx', 'ebx', 'esp', 'ebp', 'esi', 'edi']
 #class output_file():
 #
 
-        
 
 def generate_tests():
     global TEST_WRITER_COUNTER; TEST_WRITER_COUNTER = 0
@@ -94,28 +93,39 @@ def gen_base():
     # move imm32
     for reg in EREGS:
         for v in mov_values:
-            w.add_instructions(f'mov {reg}, strict dword 0x{v:08X}\npush {reg}',
-                               f'mov_imm32(0x{v:08X})->{reg}->push')
+            w.add_instructions(f'mov {reg}, strict dword 0x{v:08X}',
+                               f'mov_imm32(0x{v:08X})->{reg}')
     
     # push reg
     for reg in EREGS:
         for v in mov_values:
+            heapsize = 0
+            if reg == 'esp':
+                heapsize = (v & 0xFFFF)
+                v = HEAP_ADDRESS + (v & 0xFFFF)
             w.add_instructions(f'mov {reg}, strict dword 0x{v:08X}\npush {reg}',
-                               f'push_reg:mov_imm32(0x{v:08X})->{reg}-push_{reg}')
-
-    # push reg
+                               f'push_reg:mov_imm32(0x{v:08X})->{reg}->push',
+                               heapsize=heapsize)
+    
+    # pop reg
     for reg in EREGS:
         for v in mov_values:
-            w.add_instructions(f'push strict dword 0x{v:08X}\npop {reg}',
-                               f'pop_reg:push_imm32(0x{v:08X})-pop_{reg}')
-
+            setup_reg = 'eax' if reg != 'eax' else 'ebx'
+            heapsize = 0
+            if reg == 'esp':
+                heapsize = (v & 0xFFFF)
+                v = HEAP_ADDRESS + (v & 0xFFFF)
+            w.add_instructions(f'mov {setup_reg}, strict dword 0x{v:08X}\npush {setup_reg}; pop {reg}',
+                               f'push_reg:mov_imm32(0x{v:08X})->{setup_reg}->push->pop->{reg}',
+                               heapsize=heapsize)
+    
     # move eax->[imm32] (A3)
     for v in mov_values:
         for offset in memory_offsets:
             w.add_instructions(f'mov eax, strict dword 0x{v:08X}\nmov [0x{offset + HEAP_ADDRESS:08X}], eax',
                                f'mov-0x{v:08X}->eax->[0x{offset+HEAP_ADDRESS:08X}]',
                                heapsize=offset)
-
+    
     # move [imm32]->eax (A1)
     # - eax<-imm, [mem]<-eax, eax<-0, eax<-[mem]
     for v in mov_values:
@@ -462,7 +472,7 @@ class TestWriter:
     def add_instructions(self, instructions, testname=None, heapsize=DEFAULT_HEAP_SIZE,
                          initialize_stack=True, append_int3=True):
         if testname is None:
-            testname = "-".join(instr[ :instr.find(';') ].strip() # remove comment
+            testname = "-".join(re.sub("[;@].*", "", instr).strip() # remove comment
                                 for instr in instructions.split("\n"))
         self.add_code(
             code_for_instructions(instructions,
