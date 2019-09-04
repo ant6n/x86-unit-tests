@@ -19,10 +19,11 @@ TEMP_DIR = 'temp'
 TEST_WRITER_COUNTER = 0
 OUT_DIR = 'x86-tests'
 
-BSS_ADDRESS  = 0x7ff00000
-DATA_ADDRESS = 0x70000000
-TEXT_ADDRESS = 0x60000080 #0x08048080 #0x60000000
-HEAP_ADDRESS = 0x80000000
+DATA_ADDRESS = 0x40000000
+TEXT_ADDRESS = 0x50000080
+BSS_ADDRESS  = 0x6ff00000
+STACK_ADDRESS= 0x6ffff000
+HEAP_ADDRESS = 0x70000000 # HEAP is actually in BSS
 
 EREGS = ['eax', 'ecx', 'edx', 'ebx', 'esp', 'ebp', 'esi', 'edi']
 
@@ -78,7 +79,7 @@ def gen_base():
     
     # push imm32
     for v in mov_values:
-        w.add_instructions(f'push strict dword 0x{v:08X}', f'push_imm32(0x{hex(v)}:X)')
+        w.add_instructions(f'push strict dword 0x{v:08X}', f'push_imm32(0x{v:X})')
     
     # flag push
     w.add_instructions('pushfd')
@@ -190,7 +191,7 @@ def code_for_instructions(instructions, heapsize=DEFAULT_HEAP_SIZE,
 def code_header(heapsize=DEFAULT_HEAP_SIZE, initialize_stack=True):
     HEAP_SIZE_PAD = 16
     heapsize = math.ceil(heapsize/HEAP_SIZE_PAD)*HEAP_SIZE_PAD + HEAP_SIZE_PAD
-    stack_initializer = ('    mov esp, strict dword 0x7ffff000 ; init stack\n'
+    stack_initializer = (f'    mov esp, strict dword {STACK_ADDRESS} ; init stack\n'
                          if initialize_stack else
                          '')
     return f"""
@@ -206,15 +207,15 @@ section .data
 
 ; ===== memory ======
 section .bss        ; 
-    resb 0xfe000    ; @ 0x7ff00000 (padding)
+    resb 0xfe000    ; @ 0x6ff00000 (padding)
 _memory_start:
-    resb 0x1000     ; @ 0x7fffe000
+    resb 0x1000     ; @ 0x6fffe000
 _stack:
-    resb 0x1000     ; @ 0x7ffff000
-_heap:              ; @ 0x80000000
-    resb {heapsize} ; @ 0x80000000
+    resb 0x1000     ; @ 0x6ffff000
+_heap:              ; @ 0x70000000
+    resb {heapsize} ; @ 0x70000000
 _memory_end:
-    resb 1          ; @ 0x80000000 + heapsize
+    resb 1          ; @ 0x70000000 + heapsize
 
 
 ; ===== code ========
